@@ -2,75 +2,75 @@ import torch
 import torch.nn as nn
 from torchsummary import summary
 import torch.nn.functional as F
-
-
-class Generator(nn.Module):
-    def __init__(self, dz, d, n):
-        super(Generator, self).__init__()
-        self.d = d
-        self.n = n
-        self.fc1 = nn.Linear(dz, d)
-        self.bn1 = nn.BatchNorm1d(d)
-        self.fc2 = nn.Linear(d, d*(n//4)**2)
-        self.bn2 = nn.BatchNorm1d(d*(n//4)**2)
-        self.tconv1 = nn.ConvTranspose2d(in_channels=d, out_channels=d, kernel_size=(2, 2), stride=(2, 2))
-        # self.tconv1 = nn.ConvTranspose2d(d, d, kernel_size=4, padding=1, stride=2) #  d x 7 x 7 --> d x 14 x 14
-        self.tconv2 = nn.ConvTranspose2d(in_channels=d, out_channels=1, kernel_size=(2, 2), stride=(2, 2))
-        self.bn3 = nn.BatchNorm2d(d)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = torch.relu(x)
-        x = self.fc2(x)
-        x = self.bn2(x)
-        x = torch.relu(x)
-        x = x.view((-1, self.d, self.n//4, self.n//4))
-        x = self.tconv1(x)
-        x = self.bn3(x)
-        x = torch.relu(x)
-        x = self.tconv2(x)
-        x = torch.sigmoid(x)
-        return x
-
-
-class Discriminator(nn.Module):
-    def __init__(self, d, n):
-        super(Discriminator, self).__init__()
-        self.d = d
-        self.n = n
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=d, kernel_size=(2, 2), stride=(2, 2))
-        # self.conv1 = nn.Conv2d(1, d, kernel_size=4, padding=1, stride=2) #  1 x 28 x 28 --> d x 14 x 14
-        self.bn1 = nn.BatchNorm2d(d)
-        self.conv2 = nn.Conv2d(in_channels=d, out_channels=d, kernel_size=(2, 2), stride=(2, 2))
-        self.bn2 = nn.BatchNorm2d(d)
-        self.fc1 = nn.Linear(d*(n//4)**2, d)
-        self.bn3 = nn.BatchNorm1d(d)
-        self.fc2 = nn.Linear(d, 1)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = torch.relu(x)
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = torch.relu(x)
-        x = x.view(-1, self.d*self.n//4**2)
-        x = self.fc1(x)
-        x = self.bn3(x)
-        x = torch.relu(x)
-        x = torch.sigmoid(self.fc2(x))
-        return x
-
+from torchvision.datasets import MNIST
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
+from generator import Generator
+from discriminator import Discriminator
 
 
 if __name__ == "__main__":
 
-    torch.device("cuda")
     device = "cuda:0"
-    model_gen = Generator(10, 20, 32).to(device)
-    x = torch.randn(2, 10).to(device)
-    y = model_gen(x)
-    model_dis = Discriminator(10, 32).to(device)
-    x = torch.randn(2, 1, 32, 32).to(device)
-    y = model_dis(x)
+    image_size = 28
+    dz = 28
+    d = 128
+    epochs = 50
+    batch_per_epoch = 200
+    batch_size = 64
+
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_dataset = MNIST("..\\data", train=True, download=True, transform=transform)
+    test_dataset = MNIST("..\\data", train=False, download=True, transform=transform)
+
+    train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size, shuffle=False)
+
+    model_gen = Generator(dz, d, image_size).to(device)
+    model_dis = Discriminator(d, image_size).to(device)
+
+    init_lr = 0.001
+    optimizer_g = torch.optim.Adam(model_gen.parameters(), lr=init_lr, betas=(0.5, 0.999))
+    optimizer_d = torch.optim.Adam(model_dis.parameters(), lr=init_lr, betas=(0.5, 0.999))
+
+    for epoch in range(epochs):
+        print(f"Epoch number {epoch+1}")
+        for images, labels in train_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            z = torch.rand(batch_size, dz).to(device)
+            output_gen = model_gen(z)
+            output_dis_fake = model_dis(output_gen)
+            labels_gen = torch.unsqueeze(torch.cat((torch.ones(batch_size), torch.zeros(images.shape[0]))), 1).to(
+                device)
+            loss_gen = F.binary_cross_entropy(output_dis_fake, torch.unsqueeze(torch.zeros(batch_size)))
+            optimizer_g.zero_grad()
+            loss_gen.backward()
+            optimizer_g.step()
+
+            # mix_images = torch.cat((images, output_gen), dim=0)
+            # labels_dis = torch.unsqueeze(torch.cat((torch.zeros(images.shape[0]), torch.ones(batch_size))), 1).to(device)
+
+            output_dis_real = model_dis(images)
+            loss_dis_real = F.binary_cross_entropy(output_dis_real, torch.unsqueeze(torch.ones(images.shape[0])))
+
+            output_dis_fake = model_dis(output_gen)
+            loss_dis_fake = F.binary_cross_entropy(output_dis_fake, torch.unsqueeze(torch.zeros(batch_size)))
+
+            optimizer_d.zero_grad()
+            loss_dis_real.backward()
+            loss_dis_fake.backward()
+            optimizer_d.step()
+
+            # loss_gen = nn.BCELoss()
+            # loss_gen.backward()
+            #
+
+
+            # loss = (output, labels)
+            # loss
+
+            # optimizer.zero_grad()
+            # loss.backward()
+            # optimizer.step()
