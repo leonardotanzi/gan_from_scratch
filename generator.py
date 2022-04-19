@@ -7,9 +7,9 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
         self.d = d
         self.n = n
-        self.fc1 = nn.Linear(dz, d)
+        self.fc1 = nn.Linear(dz, d, bias=True)
         self.bn1 = nn.BatchNorm1d(d)
-        self.fc2 = nn.Linear(d, d*((n//4)**2))
+        self.fc2 = nn.Linear(d, d*((n//4)**2), bias=True)
         self.bn2 = nn.BatchNorm1d(d*((n//4)**2))
         self.tconv1 = nn.ConvTranspose2d(in_channels=d, out_channels=d, kernel_size=(4, 4), stride=(2, 2), padding=1)
         self.tconv2 = nn.ConvTranspose2d(in_channels=d, out_channels=1, kernel_size=(4, 4), stride=(2, 2), padding=1)
